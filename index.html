@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Admin — Barcode / QR Generator</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="icon" href="LABUBU3.jpg">
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial; padding:18px; max-width:1000px; margin:0 auto; background:linear-gradient(135deg,#f7fbff,#eef6ff); color:#123; }
+  h1{margin:0 0 12px; color:#234;}
+  .card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(16,24,40,0.06); margin-bottom:14px;}
+  label{display:block;margin-top:8px;font-weight:700;color:#234;}
+  .row{display:flex;gap:10px;align-items:center;}
+  .row > *{flex:1;}
+  input,select,button{padding:10px;border-radius:8px;border:1px solid #cfd9e9;font-size:15px;}
+  button{background:#2b4c7e;color:white;border:none;cursor:pointer;}
+  button.secondary{background:#efefef;color:#222;border:1px solid #ddd;}
+  .preview{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;align-items:flex-start;}
+  .preview .pane{background:#fafbff;padding:10px;border-radius:8px; text-align:center; min-width:200px;}
+  canvas, svg{max-width:100%;height:auto;}
+  small{color:#556;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media (max-width:720px){ .row{flex-direction:column;} .grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<h1>Admin — Generate Barcodes / QR Codes</h1>
+
+<div class="card">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div style="flex:1;">
+      <label>Type</label>
+      <select id="typeSelect">
+        <option value="CREDITS">CREDITS</option>
+        <option value="POINTS">POINTS</option>
+        <option value="DAYS">DAYS</option>
+      </select>
+    </div>
+
+    <div style="width:140px;">
+      <label>Sign</label>
+      <select id="signSelect">
+        <option value="+">+</option>
+        <option value="-">-</option>
+      </select>
+    </div>
+
+    <div style="width:160px;">
+      <label>Amount</label>
+      <input id="amountInput" type="number" value="100" min="1" />
+    </div>
+
+    <div style="flex:1;">
+      <label>Target (optional)</label>
+      <input id="targetInput" placeholder="leave empty for scanner to use current user" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <div style="flex-basis:160px;">
+      <label>Uses (0 = unlimited)</label>
+      <input id="usesInput" type="number" value="0" min="0" />
+    </div>
+    <div style="flex:1;">
+      <label>Expiry (optional)</label>
+      <input id="expiryInput" type="date" />
+    </div>
+    <div style="width:220px;">
+      <label>Quantity (batch)</label>
+      <input id="quantityInput" type="number" value="1" min="1" />
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+    <button id="generateBtn">Generate</button>
+    <button class="secondary" id="generateAndSaveBtn">Generate & Save to Firebase</button>
+    <button class="secondary" id="clearHistory">Clear Preview</button>
+  </div>
+
+  <small>Payload format scanned by the app: <code>TYPE|+AMOUNT|TARGET</code>. TARGET is optional — scanner will attempt currentUser if blank.</small>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3 style="margin:0 0 8px 0;">Preview & Download</h3>
+    <div id="previews" class="preview"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 8px 0;">Generated Records</h3>
+    <div id="generatedList" style="max-height:420px;overflow:auto;"></div>
+    <div style="margin-top:10px;"><button id="downloadAllBtn">Download All (zip)</button></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px;">
+  <h3 style="margin:0 0 8px 0;">Advanced</h3>
+  <div class="row">
+    <div style="flex:1;">
+      <label>Prefix / Notes (embedded only for human)</label>
+      <input id="noteInput" placeholder="Optional note, not included in payload" />
+    </div>
+    <div style="width:200px;">
+      <label>SVG width (px)</label>
+      <input id="svgWidth" type="number" value="600" min="200" />
+    </div>
+  </div>
+  <small>Use "Generate & Save to Firebase" to persist metadata (uses, expiry). The scanner code can be extended to check the DB before applying.</small>
+</div>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- firebase compat -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<script>
+/* ================== FIREBASE CONFIG ================== */
+/* Use the same config as your index page so both pages share DB */
+const firebaseConfig = {
+  apiKey: "AIzaSyAjeXycCBhYoAU-0iiC4LbSTylKrrThN8Y",
+  authDomain: "sharplabubu.firebaseapp.com",
+  databaseURL: "https://sharplabubu-default-rtdb.firebaseio.com",
+  projectId: "sharplabubu",
+  storageBucket: "sharplabubu.firebasestorage.app",
+  messagingSenderId: "596148393481",
+  appId: "1:596148393481:web:4f822d86c44a13bd810ad8",
+  measurementId: "G-4M25R3BF08"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ================== DOM refs ================== */
+const typeSelect = document.getElementById('typeSelect');
+const signSelect = document.getElementById('signSelect');
+const amountInput = document.getElementById('amountInput');
+const targetInput = document.getElementById('targetInput');
+const usesInput = document.getElementById('usesInput');
+const expiryInput = document.getElementById('expiryInput');
+const quantityInput = document.getElementById('quantityInput');
+const generateBtn = document.getElementById('generateBtn');
+const generateAndSaveBtn = document.getElementById('generateAndSaveBtn');
+const previews = document.getElementById('previews');
+const generatedList = document.getElementById('generatedList');
+const clearHistory = document.getElementById('clearHistory');
+const noteInput = document.getElementById('noteInput');
+const svgWidthInput = document.getElementById('svgWidth');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+let generatedRecords = []; // local list
+
+/* ================== utils ================== */
+function buildPayload(type, sign, amount, target) {
+  // ensure proper formatting: TYPE|+AMOUNT|TARGET(optional)
+  const amt = `${sign}${Math.abs(Number(amount) || 0)}`;
+  return target ? `${type}|${amt}|${target}` : `${type}|${amt}|`;
+}
+
+function uid(len=12){
+  const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let s='';
+  for(let i=0;i<len;i++) s += chars.charAt(Math.floor(Math.random()*chars.length));
+  return s;
+}
+
+/* ================== rendering helpers ================== */
+function createPreviewCard({payload, note, id}) {
+  const pane = document.createElement('div');
+  pane.className = 'pane';
+  pane.style.minWidth = '220px';
+  // QR container
+  const qrWrap = document.createElement('div');
+  qrWrap.style.marginBottom='8px';
+  // create QR
+  const qrEl = document.createElement('div');
+  const qr = new QRCode(qrEl, { text: payload, width: 180, height:180, correctLevel: QRCode.CorrectLevel.H });
+  qrWrap.appendChild(qrEl);
+
+  // barcode (svg)
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  svg.setAttribute('width', (Number(svgWidthInput.value)||600) );
+  svg.setAttribute('height','120');
+  svg.style.maxWidth='100%';
+  try {
+    JsBarcode(svg, payload, {format: "CODE128", width:2, height:60, displayValue:true, fontSize:14});
+  } catch (e) {
+    // fallback - show text
+    svg.innerHTML = `<text x="10" y="40" fill="#222">${payload}</text>`;
+  }
+
+  const info = document.createElement('div');
+  info.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">${payload}</div><small>${note||''}</small>`;
+
+  // buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.display='flex';
+  btnRow.style.gap='8px';
+  btnRow.style.marginTop='8px';
+  const dlQr = document.createElement('button'); dlQr.textContent = 'Download QR';
+  const dlBar = document.createElement('button'); dlBar.textContent = 'Download Barcode';
+  const copyBtn = document.createElement('button'); copyBtn.textContent = 'Copy payload';
+  dlQr.className='secondary'; dlBar.className='secondary'; copyBtn.className='secondary';
+
+  btnRow.appendChild(dlQr); btnRow.appendChild(dlBar); btnRow.appendChild(copyBtn);
+
+  pane.appendChild(qrWrap);
+  pane.appendChild(svg);
+  pane.appendChild(info);
+  pane.appendChild(btnRow);
+
+  // download QR (convert QR DOM to canvas/png)
+  dlQr.addEventListener('click', ()=> {
+    // QR lib inserted an <img> or a <canvas> depending on browser; try both
+    const img = qrEl.querySelector('img');
+    if(img){
+      const a = document.createElement('a');
+      a.href = img.src;
+      a.download = `qr_${id||uid(6)}.png`;
+      a.click();
+      return;
+    }
+    const c = qrEl.querySelector('canvas');
+    if(c){
+      const a = document.createElement('a');
+      a.href = c.toDataURL('image/png');
+      a.download = `qr_${id||uid(6)}.png`;
+      a.click();
+      return;
+    }
+    alert('Unable to locate QR image to download.');
+  });
+
+  // download barcode (svg -> png)
+  dlBar.addEventListener('click', ()=> {
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(svg);
+    const svgBlob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = function(){
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      // white background (better for viewers)
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0);
+      URL.revokeObjectURL(url);
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `barcode_${id||uid(6)}.png`;
+      a.click();
+    };
+    img.onerror = ()=>{ alert('SVG -> PNG conversion failed'); URL.revokeObjectURL(url); };
+    img.src = url;
+  });
+
+  copyBtn.addEventListener('click', async ()=> {
+    try {
+      await navigator.clipboard.writeText(payload);
+      copyBtn.textContent = 'Copied ✓';
+      setTimeout(()=> copyBtn.textContent = 'Copy payload', 1200);
+    } catch(e) {
+      alert('Copy failed: ' + (e.message || e));
+    }
+  });
+
+  return pane;
+}
+
+/* ================== generate logic ================== */
+async function generateBatch({type, sign, amount, target, note, uses, expiresAt, qty, saveToDB}) {
+  const results = [];
+  for(let i=0;i<qty;i++){
+    // unique id for record
+    const id = uid(12);
+    const payload = buildPayload(type, sign, amount, target);
+    const rec = {
+      id,
+      payload,
+      type,
+      sign,
+      amount: Number(amount),
+      target: target||null,
+      note: note||null,
+      uses: Number(uses) || 0,
+      createdAt: Date.now(),
+      expiresAt: expiresAt ? (new Date(expiresAt).getTime() || null) : null,
+      createdBy: "admin"
+    };
+
+    // push to preview
+    const card = createPreviewCard({payload, note, id});
+    previews.prepend(card);
+
+    generatedRecords.unshift(rec); // keep most recent first
+    appendGeneratedListItem(rec);
+
+    // optionally save metadata to firebase
+    if(saveToDB){
+      try {
+        const refDb = db.ref(`generatedCodes/${id}`);
+        await refDb.set(rec);
+      } catch(err){
+        console.warn('Failed to save to DB', err);
+        // continue — not fatal
+      }
+    }
+    results.push(rec);
+  }
+  return results;
+}
+
+/* append item to right-hand list */
+function appendGeneratedListItem(rec) {
+  const row = document.createElement('div');
+  row.style.borderBottom='1px dashed #e6eefb';
+  row.style.padding='8px 6px';
+  const d = new Date(rec.createdAt);
+  row.innerHTML = `<div style="font-weight:700;">${rec.payload}</div>
+                   <div style="font-size:13px;color:#556;">id: ${rec.id} • created: ${d.toLocaleString()}</div>`;
+  generatedList.prepend(row);
+}
+
+/* ================== wiring ================== */
+generateBtn.addEventListener('click', async ()=>{
+  const type = typeSelect.value;
+  const sign = signSelect.value;
+  const amount = amountInput.value;
+  const target = targetInput.value.trim();
+  const uses = usesInput.value;
+  const expiry = expiryInput.value;
+  const qty = Math.max(1, Number(quantityInput.value)||1);
+  const note = noteInput.value;
+
+  await generateBatch({type, sign, amount, target, note, uses, expiresAt: expiry, qty, saveToDB:false});
+});
+
+generateAndSaveBtn.addEventListener('click', async ()=>{
+  const type = typeSelect.value;
+  const sign = signSelect.value;
+  const amount = amountInput.value;
+  const target = targetInput.value.trim();
+  const uses = usesInput.value;
+  const expiry = expiryInput.value;
+  const qty = Math.max(1, Number(quantityInput.value)||1);
+  const note = noteInput.value;
+
+  await generateBatch({type, sign, amount, target, note, uses, expiresAt: expiry, qty, saveToDB:true});
+  alert('Generated and saved to Firebase (metadata).');
+});
+
+clearHistory.addEventListener('click', ()=> {
+  previews.innerHTML = '';
+  generatedRecords = [];
+  generatedList.innerHTML = '';
+});
+
+downloadAllBtn.addEventListener('click', ()=>{
+  alert('Bulk download not implemented in-browser in this demo. You can download each image from preview. If you want a ZIP generator I can add it (uses JSZip).');
+});
+
+/* load recent saved records from firebase for convenience */
+(async function loadRecentGenerated(){
+  try {
+    const snap = await db.ref('generatedCodes').orderByChild('createdAt').limitToLast(200).once('value');
+    if(!snap.exists()) return;
+    const val = snap.val();
+    const keys = Object.keys(val).sort((a,b)=> val[b].createdAt - val[a].createdAt);
+    keys.forEach(k => {
+      appendGeneratedListItem(val[k]);
+    });
+  } catch(e){}
+})();
+
+</script>
+</body>
+</html>
