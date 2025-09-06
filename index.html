@@ -1,124 +1,64 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Admin — Barcode / QR Generator</title>
+<title>Secret Code Generator — Admin</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<link rel="icon" href="LABUBU3.jpg">
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Arial; padding:18px; max-width:1000px; margin:0 auto; background:linear-gradient(135deg,#f7fbff,#eef6ff); color:#123; }
-  h1{margin:0 0 12px; color:#234;}
-  .card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(16,24,40,0.06); margin-bottom:14px;}
-  label{display:block;margin-top:8px;font-weight:700;color:#234;}
-  .row{display:flex;gap:10px;align-items:center;}
-  .row > *{flex:1;}
-  input,select,button{padding:10px;border-radius:8px;border:1px solid #cfd9e9;font-size:15px;}
-  button{background:#2b4c7e;color:white;border:none;cursor:pointer;}
-  button.secondary{background:#efefef;color:#222;border:1px solid #ddd;}
-  .preview{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;align-items:flex-start;}
-  .preview .pane{background:#fafbff;padding:10px;border-radius:8px; text-align:center; min-width:200px;}
-  canvas, svg{max-width:100%;height:auto;}
-  small{color:#556;}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  @media (max-width:720px){ .row{flex-direction:column;} .grid{grid-template-columns:1fr;} }
+  body{font-family:Arial,Helvetica,sans-serif;max-width:800px;margin:20px auto;padding:16px;background:#f7fbff;}
+  h1{color:#2b4c7e}
+  label{display:block;margin-top:12px;font-weight:700}
+  input, select, button {padding:10px;border-radius:8px;border:1px solid #ccc;width:100%;box-sizing:border-box}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+  .codesList{margin-top:16px;background:white;padding:12px;border-radius:8px;border:1px solid #e0e0e0}
+  .codeItem{padding:8px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+  .small{font-size:0.9rem;color:#555}
+  .danger{background:#ff4b4b;color:white;border:none;padding:8px 10px;border-radius:6px}
 </style>
 </head>
 <body>
+  <h1>Secret Code Generator</h1>
+  <p class="small">Create 5-digit secret codes that open the secret shop. Choose expiry by date/time or by max purchases.</p>
 
-<h1>Admin — Generate Barcodes / QR Codes</h1>
+  <label>Created by (username)</label>
+  <input id="createdBy" placeholder="your admin username (optional)" />
 
-<div class="card">
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <div style="flex:1;">
-      <label>Type</label>
-      <select id="typeSelect">
-        <option value="CREDITS">CREDITS</option>
-        <option value="POINTS">POINTS</option>
-        <option value="DAYS">DAYS</option>
-      </select>
-    </div>
+  <label>Expiry type</label>
+  <select id="expiryType">
+    <option value="none">No expiry</option>
+    <option value="datetime">Expiry by date/time</option>
+    <option value="purchases">Expiry by maximum purchases</option>
+    <option value="both">Both (datetime + purchases limit)</option>
+  </select>
 
-    <div style="width:140px;">
-      <label>Sign</label>
-      <select id="signSelect">
-        <option value="+">+</option>
-        <option value="-">-</option>
-      </select>
-    </div>
-
-    <div style="width:160px;">
-      <label>Amount</label>
-      <input id="amountInput" type="number" value="100" min="1" />
-    </div>
-
-    <div style="flex:1;">
-      <label>Target (optional)</label>
-      <input id="targetInput" placeholder="leave empty for scanner to use current user" />
-    </div>
+  <div id="datetimeRow" style="display:none;">
+    <label>Expiry date & time (local)</label>
+    <input id="expiryDatetime" type="datetime-local" />
   </div>
 
-  <div class="row" style="margin-top:12px;">
-    <div style="flex-basis:160px;">
-      <label>Uses (0 = unlimited)</label>
-      <input id="usesInput" type="number" value="0" min="0" />
-    </div>
-    <div style="flex:1;">
-      <label>Expiry (optional)</label>
-      <input id="expiryInput" type="date" />
-    </div>
-    <div style="width:220px;">
-      <label>Quantity (batch)</label>
-      <input id="quantityInput" type="number" value="1" min="1" />
-    </div>
+  <div id="purchasesRow" style="display:none;">
+    <label>Max purchases (integer)</label>
+    <input id="purchasesLimit" type="number" min="1" placeholder="e.g. 5" />
   </div>
 
-  <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-    <button id="generateBtn">Generate</button>
-    <button class="secondary" id="generateAndSaveBtn">Generate & Save to Firebase</button>
-    <button class="secondary" id="clearHistory">Clear Preview</button>
+  <label>Quantity (how many distinct 5-digit codes to create)</label>
+  <input id="quantity" type="number" min="1" value="1" />
+
+  <button id="generateBtn">Generate Code(s)</button>
+
+  <div style="margin-top:14px;">
+    <button id="listBtn">Refresh list</button>
+    <button id="deleteAllBtn" class="danger" style="float:right;">Delete ALL codes</button>
   </div>
 
-  <small>Payload format scanned by the app: <code>TYPE|+AMOUNT|TARGET</code>. TARGET is optional — scanner will attempt currentUser if blank.</small>
-</div>
+  <div class="codesList" id="codesList">Loading...</div>
 
-<div class="grid">
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Preview & Download</h3>
-    <div id="previews" class="preview"></div>
-  </div>
+<script type="module">
+import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Generated Records</h3>
-    <div id="generatedList" style="max-height:420px;overflow:auto;"></div>
-    <div style="margin-top:10px;"><button id="downloadAllBtn">Download All (zip)</button></div>
-  </div>
-</div>
-
-<div class="card" style="margin-top:12px;">
-  <h3 style="margin:0 0 8px 0;">Advanced</h3>
-  <div class="row">
-    <div style="flex:1;">
-      <label>Prefix / Notes (embedded only for human)</label>
-      <input id="noteInput" placeholder="Optional note, not included in payload" />
-    </div>
-    <div style="width:200px;">
-      <label>SVG width (px)</label>
-      <input id="svgWidth" type="number" value="600" min="200" />
-    </div>
-  </div>
-  <small>Use "Generate & Save to Firebase" to persist metadata (uses, expiry). The scanner code can be extended to check the DB before applying.</small>
-</div>
-
-<!-- libs -->
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<!-- firebase compat -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-
-<script>
-/* ================== FIREBASE CONFIG ================== */
-/* Use the same config as your index page so both pages share DB */
+// same firebase config as your app
 const firebaseConfig = {
   apiKey: "AIzaSyAjeXycCBhYoAU-0iiC4LbSTylKrrThN8Y",
   authDomain: "sharplabubu.firebaseapp.com",
@@ -129,252 +69,113 @@ const firebaseConfig = {
   appId: "1:596148393481:web:4f822d86c44a13bd810ad8",
   measurementId: "G-4M25R3BF08"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
 
-/* ================== DOM refs ================== */
-const typeSelect = document.getElementById('typeSelect');
-const signSelect = document.getElementById('signSelect');
-const amountInput = document.getElementById('amountInput');
-const targetInput = document.getElementById('targetInput');
-const usesInput = document.getElementById('usesInput');
-const expiryInput = document.getElementById('expiryInput');
-const quantityInput = document.getElementById('quantityInput');
-const generateBtn = document.getElementById('generateBtn');
-const generateAndSaveBtn = document.getElementById('generateAndSaveBtn');
-const previews = document.getElementById('previews');
-const generatedList = document.getElementById('generatedList');
-const clearHistory = document.getElementById('clearHistory');
-const noteInput = document.getElementById('noteInput');
-const svgWidthInput = document.getElementById('svgWidth');
-const downloadAllBtn = document.getElementById('downloadAllBtn');
+let app;
+try { app = getApp(); } catch (e) { app = initializeApp(firebaseConfig); }
+const db = getDatabase(app);
 
-let generatedRecords = []; // local list
+const expiryTypeEl = document.getElementById('expiryType');
+const datetimeRow = document.getElementById('datetimeRow');
+const purchasesRow = document.getElementById('purchasesRow');
+expiryTypeEl.addEventListener('change', ()=> {
+  const v = expiryTypeEl.value;
+  datetimeRow.style.display = (v === 'datetime' || v === 'both') ? 'block' : 'none';
+  purchasesRow.style.display = (v === 'purchases' || v === 'both') ? 'block' : 'none';
+});
 
-/* ================== utils ================== */
-function buildPayload(type, sign, amount, target) {
-  // ensure proper formatting: TYPE|+AMOUNT|TARGET(optional)
-  const amt = `${sign}${Math.abs(Number(amount) || 0)}`;
-  return target ? `${type}|${amt}|${target}` : `${type}|${amt}|`;
+function random5digits(){
+  return Math.floor(10000 + Math.random()*90000).toString();
 }
 
-function uid(len=12){
-  const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s='';
-  for(let i=0;i<len;i++) s += chars.charAt(Math.floor(Math.random()*chars.length));
-  return s;
+async function codeExists(code){
+  const snap = await get(ref(db, `secretCodes/${code}`));
+  return snap.exists();
 }
 
-/* ================== rendering helpers ================== */
-function createPreviewCard({payload, note, id}) {
-  const pane = document.createElement('div');
-  pane.className = 'pane';
-  pane.style.minWidth = '220px';
-  // QR container
-  const qrWrap = document.createElement('div');
-  qrWrap.style.marginBottom='8px';
-  // create QR
-  const qrEl = document.createElement('div');
-  const qr = new QRCode(qrEl, { text: payload, width: 180, height:180, correctLevel: QRCode.CorrectLevel.H });
-  qrWrap.appendChild(qrEl);
+async function createSingleCode({ code, createdBy, expiryMs=null, purchasesLimit=null }){
+  const payload = {
+    code,
+    createdBy: createdBy || 'admin',
+    createdAt: Date.now(),
+    expiry: expiryMs || null,
+    purchasesLimit: purchasesLimit != null ? Number(purchasesLimit) : null,
+    used: 0
+  };
+  // write under key = code for easy lookup
+  await set(ref(db, `secretCodes/${code}`), payload);
+  return payload;
+}
 
-  // barcode (svg)
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  svg.setAttribute('width', (Number(svgWidthInput.value)||600) );
-  svg.setAttribute('height','120');
-  svg.style.maxWidth='100%';
-  try {
-    JsBarcode(svg, payload, {format: "CODE128", width:2, height:60, displayValue:true, fontSize:14});
-  } catch (e) {
-    // fallback - show text
-    svg.innerHTML = `<text x="10" y="40" fill="#222">${payload}</text>`;
+document.getElementById('generateBtn').addEventListener('click', async ()=>{
+  const qty = Math.max(1, parseInt(document.getElementById('quantity').value) || 1);
+  const type = expiryTypeEl.value;
+  const createdBy = document.getElementById('createdBy').value || 'admin';
+  let expiryMs = null;
+  let purchasesLimit = null;
+  if(type === 'datetime' || type === 'both'){
+    const dt = document.getElementById('expiryDatetime').value;
+    if(!dt) return alert('Please pick expiry date/time');
+    expiryMs = new Date(dt).getTime();
+  }
+  if(type === 'purchases' || type === 'both'){
+    purchasesLimit = parseInt(document.getElementById('purchasesLimit').value);
+    if(!purchasesLimit || purchasesLimit < 1) return alert('Please enter a valid purchases limit');
   }
 
-  const info = document.createElement('div');
-  info.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">${payload}</div><small>${note||''}</small>`;
-
-  // buttons
-  const btnRow = document.createElement('div');
-  btnRow.style.display='flex';
-  btnRow.style.gap='8px';
-  btnRow.style.marginTop='8px';
-  const dlQr = document.createElement('button'); dlQr.textContent = 'Download QR';
-  const dlBar = document.createElement('button'); dlBar.textContent = 'Download Barcode';
-  const copyBtn = document.createElement('button'); copyBtn.textContent = 'Copy payload';
-  dlQr.className='secondary'; dlBar.className='secondary'; copyBtn.className='secondary';
-
-  btnRow.appendChild(dlQr); btnRow.appendChild(dlBar); btnRow.appendChild(copyBtn);
-
-  pane.appendChild(qrWrap);
-  pane.appendChild(svg);
-  pane.appendChild(info);
-  pane.appendChild(btnRow);
-
-  // download QR (convert QR DOM to canvas/png)
-  dlQr.addEventListener('click', ()=> {
-    // QR lib inserted an <img> or a <canvas> depending on browser; try both
-    const img = qrEl.querySelector('img');
-    if(img){
-      const a = document.createElement('a');
-      a.href = img.src;
-      a.download = `qr_${id||uid(6)}.png`;
-      a.click();
-      return;
-    }
-    const c = qrEl.querySelector('canvas');
-    if(c){
-      const a = document.createElement('a');
-      a.href = c.toDataURL('image/png');
-      a.download = `qr_${id||uid(6)}.png`;
-      a.click();
-      return;
-    }
-    alert('Unable to locate QR image to download.');
-  });
-
-  // download barcode (svg -> png)
-  dlBar.addEventListener('click', ()=> {
-    const serializer = new XMLSerializer();
-    const svgStr = serializer.serializeToString(svg);
-    const svgBlob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'});
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    img.onload = function(){
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width; canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      // white background (better for viewers)
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.drawImage(img,0,0);
-      URL.revokeObjectURL(url);
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/png');
-      a.download = `barcode_${id||uid(6)}.png`;
-      a.click();
-    };
-    img.onerror = ()=>{ alert('SVG -> PNG conversion failed'); URL.revokeObjectURL(url); };
-    img.src = url;
-  });
-
-  copyBtn.addEventListener('click', async ()=> {
-    try {
-      await navigator.clipboard.writeText(payload);
-      copyBtn.textContent = 'Copied ✓';
-      setTimeout(()=> copyBtn.textContent = 'Copy payload', 1200);
-    } catch(e) {
-      alert('Copy failed: ' + (e.message || e));
-    }
-  });
-
-  return pane;
-}
-
-/* ================== generate logic ================== */
-async function generateBatch({type, sign, amount, target, note, uses, expiresAt, qty, saveToDB}) {
-  const results = [];
+  const created = [];
   for(let i=0;i<qty;i++){
-    // unique id for record
-    const id = uid(12);
-    const payload = buildPayload(type, sign, amount, target);
-    const rec = {
-      id,
-      payload,
-      type,
-      sign,
-      amount: Number(amount),
-      target: target||null,
-      note: note||null,
-      uses: Number(uses) || 0,
-      createdAt: Date.now(),
-      expiresAt: expiresAt ? (new Date(expiresAt).getTime() || null) : null,
-      createdBy: "admin"
-    };
-
-    // push to preview
-    const card = createPreviewCard({payload, note, id});
-    previews.prepend(card);
-
-    generatedRecords.unshift(rec); // keep most recent first
-    appendGeneratedListItem(rec);
-
-    // optionally save metadata to firebase
-    if(saveToDB){
-      try {
-        const refDb = db.ref(`generatedCodes/${id}`);
-        await refDb.set(rec);
-      } catch(err){
-        console.warn('Failed to save to DB', err);
-        // continue — not fatal
+    let tries = 0;
+    while(true){
+      tries++;
+      const c = random5digits();
+      const exists = await codeExists(c);
+      if(!exists){
+        const payload = await createSingleCode({ code: c, createdBy, expiryMs, purchasesLimit });
+        created.push(payload);
+        break;
       }
+      if(tries > 10) { alert('Failed to generate unique code after multiple attempts'); break; }
     }
-    results.push(rec);
   }
-  return results;
+  if(created.length) {
+    alert(`Created ${created.length} new code(s).`);
+    listCodes();
+  }
+});
+
+async function listCodes(){
+  const snap = await get(ref(db, 'secretCodes'));
+  const container = document.getElementById('codesList');
+  container.innerHTML = '';
+  if(!snap.exists()){ container.innerHTML = '<div class="small">No codes yet.</div>'; return; }
+  const all = snap.val();
+  const entries = Object.entries(all).sort((a,b)=> a[0].localeCompare(b[0]));
+  entries.forEach(([code, data])=>{
+    const div = document.createElement('div'); div.className = 'codeItem';
+    const left = document.createElement('div');
+    const right = document.createElement('div');
+    left.innerHTML = `<strong>${code}</strong> <div class="small">created: ${new Date(data.createdAt).toLocaleString()}</div>`;
+    const meta = [];
+    if(data.expiry) meta.push(`expires: ${new Date(data.expiry).toLocaleString()}`);
+    if(data.purchasesLimit != null) meta.push(`limit: ${data.purchasesLimit}`);
+    meta.push(`used: ${data.used||0}`);
+    left.innerHTML += `<div class="small">${meta.join(' • ')}</div>`;
+    const delBtn = document.createElement('button'); delBtn.textContent = 'Delete'; delBtn.style.marginLeft='8px';
+    delBtn.addEventListener('click', async ()=> { if(!confirm('Delete code '+code+' ?')) return; await remove(ref(db, `secretCodes/${code}`)); listCodes(); });
+    right.appendChild(delBtn);
+    div.appendChild(left); div.appendChild(right);
+    container.appendChild(div);
+  });
 }
 
-/* append item to right-hand list */
-function appendGeneratedListItem(rec) {
-  const row = document.createElement('div');
-  row.style.borderBottom='1px dashed #e6eefb';
-  row.style.padding='8px 6px';
-  const d = new Date(rec.createdAt);
-  row.innerHTML = `<div style="font-weight:700;">${rec.payload}</div>
-                   <div style="font-size:13px;color:#556;">id: ${rec.id} • created: ${d.toLocaleString()}</div>`;
-  generatedList.prepend(row);
-}
-
-/* ================== wiring ================== */
-generateBtn.addEventListener('click', async ()=>{
-  const type = typeSelect.value;
-  const sign = signSelect.value;
-  const amount = amountInput.value;
-  const target = targetInput.value.trim();
-  const uses = usesInput.value;
-  const expiry = expiryInput.value;
-  const qty = Math.max(1, Number(quantityInput.value)||1);
-  const note = noteInput.value;
-
-  await generateBatch({type, sign, amount, target, note, uses, expiresAt: expiry, qty, saveToDB:false});
+document.getElementById('listBtn').addEventListener('click', ()=> listCodes());
+document.getElementById('deleteAllBtn').addEventListener('click', async ()=>{
+  if(!confirm('Delete ALL secret codes? This cannot be undone.')) return;
+  await set(ref(db, 'secretCodes'), null);
+  listCodes();
 });
 
-generateAndSaveBtn.addEventListener('click', async ()=>{
-  const type = typeSelect.value;
-  const sign = signSelect.value;
-  const amount = amountInput.value;
-  const target = targetInput.value.trim();
-  const uses = usesInput.value;
-  const expiry = expiryInput.value;
-  const qty = Math.max(1, Number(quantityInput.value)||1);
-  const note = noteInput.value;
-
-  await generateBatch({type, sign, amount, target, note, uses, expiresAt: expiry, qty, saveToDB:true});
-  alert('Generated and saved to Firebase (metadata).');
-});
-
-clearHistory.addEventListener('click', ()=> {
-  previews.innerHTML = '';
-  generatedRecords = [];
-  generatedList.innerHTML = '';
-});
-
-downloadAllBtn.addEventListener('click', ()=>{
-  alert('Bulk download not implemented in-browser in this demo. You can download each image from preview. If you want a ZIP generator I can add it (uses JSZip).');
-});
-
-/* load recent saved records from firebase for convenience */
-(async function loadRecentGenerated(){
-  try {
-    const snap = await db.ref('generatedCodes').orderByChild('createdAt').limitToLast(200).once('value');
-    if(!snap.exists()) return;
-    const val = snap.val();
-    const keys = Object.keys(val).sort((a,b)=> val[b].createdAt - val[a].createdAt);
-    keys.forEach(k => {
-      appendGeneratedListItem(val[k]);
-    });
-  } catch(e){}
-})();
+listCodes();
 
 </script>
 </body>
